@@ -90,7 +90,7 @@ early_stopping = tf.keras.callbacks.EarlyStopping(monitor="val_accuracy",patienc
 history = model.fit(
     X_train,
     y_train,
-    validation_split=0.20,
+    validation_split=0.30,
     epochs=20,
     batch_size=64,
     callbacks=[early_stopping],
