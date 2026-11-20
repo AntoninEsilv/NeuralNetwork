@@ -90,7 +90,7 @@ early_stopping = tf.keras.callbacks.EarlyStopping(monitor="val_accuracy",patienc
 history = model.fit(
     X_train,
     y_train,
-    validation_split=0.20,
+    validation_split=0.30,
     epochs=20,
     batch_size=64,
     callbacks=[early_stopping],
@@ -117,3 +117,105 @@ for index, predicted_label in enumerate(predicted_labels):
 #transfert learning approach
 
 
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from sklearn.metrics import classification_report, confusion_matrix
+
+tf.random.set_seed(42)
+
+IMG_SIZE = 96
+BATCH_SIZE = 64
+EPOCHS_PHASE1 = 10
+EPOCHS_PHASE2 = 10
+
+X_train_tl = X_train
+X_test_tl = X_test
+
+base_model = keras.applications.MobileNetV2(
+    input_shape=(IMG_SIZE, IMG_SIZE, 3),
+    include_top=False,
+    weights="imagenet",
+)
+base_model.trainable = False
+
+inputs = keras.Input(shape=(28, 28, 1))
+x = layers.Resizing(IMG_SIZE, IMG_SIZE)(inputs)
+x = layers.Concatenate()([x, x, x])
+x = layers.Rescaling(scale=2.0, offset=-1.0)(x)
+x = base_model(x, training=False)
+x = layers.GlobalAveragePooling2D()(x)
+x = layers.Dropout(0.2)(x)
+outputs = layers.Dense(10, activation="softmax")(x)
+
+tl_model = keras.Model(inputs, outputs, name="mobilenetv2_transfer")
+tl_model.summary()
+
+early_stop = keras.callbacks.EarlyStopping(
+    monitor="val_loss", patience=3, restore_best_weights=True
+)
+
+tl_model.compile(
+    optimizer=keras.optimizers.Adam(learning_rate=1e-3),
+    loss="sparse_categorical_crossentropy",
+    metrics=["accuracy"],
+)
+history_phase1 = tl_model.fit(
+    X_train_tl, y_train,
+    validation_split=0.3,
+    batch_size=BATCH_SIZE,
+    epochs=EPOCHS_PHASE1,
+    callbacks=[early_stop],
+    verbose=2,
+)
+
+base_model.trainable = True
+for layer in base_model.layers:
+    if isinstance(layer, layers.BatchNormalization):
+        layer.trainable = False
+tl_model.compile(
+    optimizer=keras.optimizers.Adam(learning_rate=1e-5),
+    loss="sparse_categorical_crossentropy",
+    metrics=["accuracy"],
+)
+history_phase2 = tl_model.fit(
+    X_train_tl, y_train,
+    validation_split=0.3,
+    batch_size=BATCH_SIZE,
+    epochs=EPOCHS_PHASE2,
+    callbacks=[early_stop],
+    verbose=2,
+)
+
+tl_loss, tl_acc = tl_model.evaluate(X_test_tl, y_test, verbose=0)
+print(f"\n[Transfer learning] Test loss : {tl_loss:.4f} | Test accuracy : {tl_acc:.4f}")
+
+y_pred_tl = np.argmax(tl_model.predict(X_test_tl, verbose=0), axis=1)
+print(classification_report(y_test, y_pred_tl, target_names=class_names,
+                            digits=3, zero_division=0))
+print("Matrice de confusion (lignes = vraie classe, colonnes = prédiction) :")
+with pd.option_context("display.width", 200, "display.max_columns", None):
+    print(pd.DataFrame(confusion_matrix(y_test, y_pred_tl),
+                       index=class_names, columns=class_names))
+
+acc = history_phase1.history["accuracy"] + history_phase2.history["accuracy"]
+val_acc = history_phase1.history["val_accuracy"] + history_phase2.history["val_accuracy"]
+n1 = len(history_phase1.history["accuracy"])
+
+plt.figure(figsize=(7, 4))
+plt.plot(acc, label="Train")
+plt.plot(val_acc, label="Validation")
+plt.axvline(n1 - 0.5, color="gray", linestyle="--", label="Début du fine-tuning")
+plt.title("Transfer learning (MobileNetV2) : accuracy")
+plt.xlabel("Époque")
+plt.ylabel("Accuracy")
+plt.legend()
+plt.tight_layout()
+courbes_path = Path(__file__).resolve().parent / "transfer_learning_curves.png"
+plt.savefig(courbes_path)
+print(f"Courbes enregistrées dans {courbes_path}")
+
+print("\n=== Comparaison sur le même test set ===")
+print(f"CNN from scratch  : accuracy = {test_accuracy:.4f} | {model.count_params():,} paramètres")
+print(f"Transfer learning : accuracy = {tl_acc:.4f} | {tl_model.count_params():,} paramètres")
