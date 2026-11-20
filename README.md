@@ -1,2 +1,2 @@
 # NeuralNetwork
-Projet de classification de Ne
+Projet de classification de Neural Network
