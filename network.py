@@ -5,6 +5,7 @@ from pathlib import Path
 from sklearn.model_selection import train_test_split
 
 chemin = Path(__file__).resolve().parent / "dataset" / "fashion-mnist_test.csv"
+# https://www.kaggle.com/datasets/zalando-research/fashionmnist
 
 df = pd.read_csv(chemin)
 X = df.drop("label", axis=1).values
